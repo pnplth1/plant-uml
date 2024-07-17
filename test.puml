@@ -1,0 +1,107 @@
+@startuml
+'''''''''''''''''''''''''''''''''''''''''''''''''
+
+'''''''''''''''''''''''''''''''''''''''''''''''''
+title POST /v1/tablet-common-application-service/application/personal-info/update
+'''''''''''''''''''''''''''''''''''''''''''''''''
+' define diagram participants
+'''''''''''''''''''''''''''''''''''''''''''''''''
+
+actor Requestor
+
+box "TOP" #E1FAFD
+boundary "tablet-common-application-service" as main #80BBEC
+boundary "customer-identification-service" as iden #80BBEC
+box "Azure" #lime
+boundary "Azure Event Hub" as log #green
+box "COB" #papayawhip
+boundary "customer-application-service" as form #lime
+boundary "reference-data-service" as ref #lime
+end box
+
+'''''''''''''''''''''''''''''''''''''''''''''''''
+' formatting options
+'''''''''''''''''''''''''''''''''''''''''''''''''
+hide footbox
+
+'autonumber
+
+skinparam defaultFontName Comic Sans MS
+skinparam sequence {
+ParticipantBorderColor black
+ParticipantBackgroundColor #A9DCDF
+ParticipantFontName Comic Sans MS
+ParticipantFontSize 15
+ActorBackgroundColor #A9DCDF
+ActorBorderColor black
+ArrowFontName Comic Sans MS
+}
+
+'''''''''''''''''''''''''''''''''''''''''''''''''
+' describe sequence of events
+'''''''''''''''''''''''''''''''''''''''''''''''''
+==  ==
+
+Requestor -> main :POST /v1/tablet-common-application-service/application/personal-info/update
+activate main
+
+group Validate input fields
+    note right of main
+        * Validate Mandatory
+        * Validate List of value
+    end note
+    alt If not pass validation
+        note right of main: Hard stop. Return status.code 8000, HTTP status 400
+    end alt
+    end group  
+
+group Retrieve RM ID
+main -> iden: POST /v1/customer-identification-service/identification/customer-information/inquiry
+activate iden
+note right of iden
+Additional data: refer to additional mapping
+end note
+iden -> main: Return data
+deactivate iden
+alt If status code != 0000
+note right of main 
+Hard stop.Return status.code 9000, HTTP status 500
+end note
+end alt
+end group
+
+group Retrieve config table for mapping
+            main -> ref : GET /v1/reference-data-service/ete/list-of-values/kyc-classifies
+            activate ref
+            ref -> main: Response
+            note right of main
+            Mapping mapped response.data.entryList[].descriptionTh/response.data.entryList[].descriptionEN with titleTh/titleEn
+                If mapped titleTh/titelEn can be mapped,
+                    return titleCode = value of matched response.data.entryList[].code
+            end note
+            deactivate
+            
+            end group
+
+group Update customer personal information
+main -> form: PATCH /v1/customer-application-service/application/form/update
+activate form
+note right of form
+Additional data: refer additional mapping
+end note
+form -> main: Return data
+deactivate form
+alt If status code == 0002
+note right of main
+Hard stop. Return status.code 9001, HTTP status 500
+end note
+end alt
+end group 
+
+group <Publish Activity log
+main -> log: Topic: top-{env}-activity-logging - Publish
+end group
+
+main --> Requestor : Response
+deactivate main
+@enduml

@@ -1,0 +1,86 @@
+@startuml
+'''''''''''''''''''''''''''''''''''''''''''''''''
+
+'''''''''''''''''''''''''''''''''''''''''''''''''
+title PATCH /v1/tablet-common-application-service/application/additional-career/update
+'''''''''''''''''''''''''''''''''''''''''''''''''
+' define diagram participants
+'''''''''''''''''''''''''''''''''''''''''''''''''
+
+actor Requestor
+
+box "TOP" #E1FAFD
+boundary "tablet-common-application-service" as main #80BBEC
+end box
+
+box "COB" #E1FAFD
+boundary "customer-application-service" as common #80BBEC
+end box
+
+
+
+
+'''''''''''''''''''''''''''''''''''''''''''''''''
+' formatting options
+'''''''''''''''''''''''''''''''''''''''''''''''''
+hide footbox
+
+'autonumber
+
+skinparam defaultFontName Comic Sans MS
+skinparam sequence {
+ParticipantBorderColor black
+ParticipantBackgroundColor #A9DCDF
+ParticipantFontName Comic Sans MS
+ParticipantFontSize 15
+ActorBackgroundColor #A9DCDF
+ActorBorderColor black
+ArrowFontName Comic Sans MS
+}
+
+'''''''''''''''''''''''''''''''''''''''''''''''''
+' describe sequence of events
+'''''''''''''''''''''''''''''''''''''''''''''''''
+==  ==
+
+Requestor ->   main : PATCH /v1/tablet-common-application-service/application/additional-career/update
+activate main 
+    group Validate input fields 
+	note right of main
+            * Validate Mandatory
+            * Validate List of value
+        end note
+        alt If not pass validation
+            note right of main
+ Hard stop. 
+ Return HTTP Status = "400" and status.code 8000
+end note
+        end alt
+      end group
+
+      
+
+group Update additional occupation Info to COB
+main -> common : POST /v1/customer-identification-service/identification/customer-information/upsert (TBC)
+activate common
+common --> main: Return Status
+deactivate common
+  alt If (Update success)
+            note right of main : Proceed to next step
+        else Else if (Update failed)
+            note right of main
+            Hard stop. 
+            Return HTTP Status = "404" and status.code 8100
+            end note 
+    else Else any error occur
+        note right of main
+        Hard stop. 
+        Return HTTP Status = "500" and status.code 9000
+        end note
+    end alt  
+end group
+
+
+main --> Requestor : Response
+deactivate main
+@enduml
