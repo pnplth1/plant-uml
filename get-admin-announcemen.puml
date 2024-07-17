@@ -1,0 +1,240 @@
+@startuml
+'''''''''''''''''''''''''''''''''''''''''''''''''
+
+'''''''''''''''''''''''''''''''''''''''''''''''''
+title GET /v1/adm-admin-announcement-service/inquiry
+
+'''''''''''''''''''''''''''''''''''''''''''''''''
+' define diagram participants
+'''''''''''''''''''''''''''''''''''''''''''''''''
+
+actor Requestor #80BBEC
+
+box "Admin Panel" #E1FAFD
+boundary "adm-admin-announcement-service" as admin_bff #80BBEC
+boundary "announcement-service" as announcement_svc #80BBEC
+
+'''''''''''''''''''''''''''''''''''''''''''''''''
+' formatting options
+'''''''''''''''''''''''''''''''''''''''''''''''''
+hide footbox
+
+'autonumber
+
+skinparam defaultFontName Comic Sans MS
+skinparam sequence {
+ParticipantBorderColor black
+ParticipantBackgroundColor #A9DCDF
+ParticipantFontName Comic Sans MS
+ParticipantFontSize 15
+ActorBackgroundColor #A9DCDF
+ActorBorderColor black
+ArrowFontName Comic Sans MS
+}
+
+'''''''''''''''''''''''''''''''''''''''''''''''''
+' describe sequence of events
+'''''''''''''''''''''''''''''''''''''''''''''''''
+==  ==
+
+Requestor ->   admin_bff : GET /v1/adm-admin-announcement-service/inquiry
+activate admin_bff
+
+group Section: Validate input fields
+    note right of admin_bff
+        * Validate Mandatory
+    end note
+      alt If validation is failure/not pass
+    note right of admin_bff
+      Hard stop.
+      Return HTTP Status = "400" and status.code = "8000"
+    end note
+  Else Else
+    note right of admin_bff : Proceed to next step
+  end alt
+    end group  
+
+group Section: Extract Header Field: Authorization
+  admin_bff -> admin_bff: decrypted Access Token
+      alt If decrypt token is failure/not pass
+    note right of admin_bff
+      Hard stop.
+      Return HTTP Status = "200" and status.code = "2405"
+    end note
+  Else Else
+    note right of admin_bff
+    <b>Get data from token</b> ,There is below parameter:
+        staff_id
+    end note
+  end alt
+end group
+
+group Section: Clear Temp Announcement
+    alt If (isTempDeleted = false)
+     note right of admin_bff : Proceed to next step
+    else Else
+        group Section: Inquiry Temp Announcement
+            admin_bff -> announcement_svc : POST /v1/announcement-service/inquiry <b>[Request(1)]
+            activate announcement_svc
+            announcement_svc--> admin_bff  : Response
+            deactivate announcement_svc
+             alt If (status = "0000")
+              note right of admin_bff : Proceed to next step
+            else Else if (status = "8100")
+                note right of admin_bff 
+                Skip to <b>Section: Retrieve Announcement
+                end note 
+            else Else
+                note right of admin_bff 
+                Hard stop. 
+                Return HTTP Status = "500" and status.code = "9000"
+                end note
+        end alt   
+        end group
+        group Section: Update State Temp to State Normal 
+            Loop For each data[].primaryAnnounceId
+            admin_bff -> announcement_svc : POST /v1/announcement-service/update
+            activate announcement_svc
+            announcement_svc--> admin_bff  : Response
+            deactivate announcement_svc
+            alt If (status = "0000")
+                note right of admin_bff : Proceed to next step
+                else Else if (status = "8100")
+                    note right of admin_bff 
+                    Hard stop. 
+                    Return HTTP Status = "404" and status.code = "8100"
+                    end note 
+                else Else
+                    note right of admin_bff 
+                    Hard stop. 
+                    Return HTTP Status = "500" and status.code = "9000"
+                    end note
+            end alt   
+            end group 
+        end group
+    group Section: Delete Temp State
+        Loop For each data[].id
+               admin_bff -> announcement_svc : POST /v1/announcement-service/delete
+        activate announcement_svc
+        announcement_svc--> admin_bff  : Response
+        deactivate announcement_svc
+      alt If (status = "0000")
+              note right of admin_bff : Proceed to next step
+          else Else if (status = "8100")
+              note right of admin_bff 
+              Hard stop. 
+              Return HTTP Status = "404" and status.code = "8100"
+              end note 
+      else Else
+          note right of admin_bff 
+          Hard stop. 
+          Return HTTP Status = "500" and status.code = "9000"
+          end note
+      end alt    
+            end group 
+      end group
+    end alt
+
+end group
+
+group Section: Retrieve Announcement
+      admin_bff -> announcement_svc : GET /v1/announcement-service/inquiry <b>[Request(2)]
+      activate announcement_svc
+      announcement_svc--> admin_bff  : Response
+      deactivate announcement_svc
+    alt If (status = "0000")
+            note right of admin_bff : Proceed to next step
+        else Else if (status = "8100")
+            note right of admin_bff 
+            Hard stop. 
+            Return HTTP Status = "404" and status.code = "8100"
+            end note 
+    else Else
+        note right of admin_bff 
+        Hard stop. 
+        Return HTTP Status = "500" and status.code = "9000"
+        end note
+    end alt   
+end group
+
+group Section: Prepare Active Announcement
+      admin_bff -> admin_bff :
+      Loop For each data[].status
+        note right of admin_bff 
+            Find announcement by logic as below :
+            # data[].status = ["ACTIVE"]
+        end note 
+            alt If (found)
+                 note right of admin_bff
+                    # Mapping data to activeAnnouncement[] 
+                    # Max size of activeAnnouncement[] not over 9
+                    # Order by activeAnnouncement[].priority
+                    # Set totalActiveAnnouncement = Lenght of activeAnnouncement[] + 1
+                 end note
+            Else Else
+                 note right of admin_bff
+                    # Set activeAnnouncement[] = null
+                    # Set totalActiveAnnouncement = null
+                 end note
+            end alt
+      end group
+end group
+
+group Section: Prepare Default Announcement
+      admin_bff -> admin_bff :
+      Loop For each data[].status
+        note right of admin_bff 
+            Find announcement by logic as below :
+            # data[].status = ["DEFAULT"]
+        end note 
+            alt If (found)
+                 note right of admin_bff : Mapping data to defaultAnnouncement[]
+            Else Else
+                 note right of admin_bff : Set defaultAnnouncement[] = null
+            end alt
+      end group
+end group
+
+group Section: Prepare List Announcement
+      admin_bff -> admin_bff :
+      Loop For each data[].state
+        note right of admin_bff 
+            Find announcement by logic as below :
+            # data[].state = ["NORMAL"]
+            # data[].state = ["TEMP"] and data[].updatedBy = {staff_id}
+        end note 
+            alt If (found)
+                note right of admin_bff
+                    # Mapping data to listAnnouncement[]
+                    # Order by logic as below:
+                        2.1 listAnnouncement[].state = ["TEMP"] and listAnnouncement[].updatedBy = {staff_id} order by listAnnouncement[].updatedDatetime DESC 
+                        2.2 listAnnouncement[].state = ["NORMAL"] order by listAnnouncement[].priority ASC 
+                    # Set totalActiveAnnouncement = Lenght of listAnnouncement[]
+                 end note
+            Else Else
+                 note right of admin_bff
+                    # Set listAnnouncement[] = null
+                    # Set totalListAnnouncement = null
+                 end note
+            end alt
+      end group
+end group
+
+group Section: Prepare Total History
+      admin_bff -> admin_bff :
+      Loop For each data[].status
+        note right of admin_bff 
+            Find announcement by logic as below :
+            # data[].status = ["EXPIRED"]
+        end note 
+            alt If (found)
+                 note right of admin_bff : Set totalHistoryAnnouncement = lenght of status history
+            Else Else
+                 note right of admin_bff : Set totalHistoryAnnouncement = null
+            end alt
+      end group
+end group
+
+admin_bff --> Requestor : Response
+deactivate admin_bff
+@enduml
